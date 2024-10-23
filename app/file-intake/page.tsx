@@ -4,14 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../../components/ui/button';
 import { useRouter } from 'next/navigation';
 
-// Mock data for templates
-const templates = [
-  "Template 1",
-  "Template 2",
-  "Template 3",
-  "Template 4",
-  "Template 5",
-];
+interface PolicyData {
+  PolicyName: string;
+  ClaimAdministrator1: string;
+}
 
 export default function FileIntakePage() {
   const router = useRouter();
@@ -19,12 +15,56 @@ export default function FileIntakePage() {
   const [showSetupDialog, setShowSetupDialog] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [savedTemplates, setSavedTemplates] = useState<string[]>([]);
+  const [policyData, setPolicyData] = useState<PolicyData[]>([]);
+  const [selectedPolicyHolder, setSelectedPolicyHolder] = useState<string>('');
+  const [selectedClaimAdministrator, setSelectedClaimAdministrator] = useState<string>('');
 
   useEffect(() => {
-    // Load saved templates from local storage
-    const templates = JSON.parse(localStorage.getItem('savedTemplates') || '{}');
-    setSavedTemplates(Object.keys(templates));
+    console.log('FileIntakePage component mounted');
+    checkSupabaseConnection();
+    fetchPolicyData();
   }, []);
+
+  const checkSupabaseConnection = async () => {
+    console.log('Checking Supabase connection...');
+    try {
+      const response = await fetch('/api/supabase-proxy?table=PlcPolicy');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      console.log('Supabase connection successful. Sample data:', data.slice(0, 1));
+    } catch (error) {
+      console.error('Error checking Supabase connection:', error);
+    }
+  };
+
+  const fetchPolicyData = async () => {
+    console.log('Fetching policy data...');
+    try {
+      const response = await fetch('/api/supabase-proxy?table=PlcPolicy');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+
+      console.log('Raw fetched data from PlcPolicy table:', data);
+      
+      if (Array.isArray(data) && data.length > 0) {
+        console.log('Number of rows in PlcPolicy table:', data.length);
+        console.log('First row of data:', data[0]);
+        setPolicyData(data);
+      } else {
+        console.log('No data found in PlcPolicy table or data is not an array');
+      }
+    } catch (error) {
+      console.error('Error fetching policy data:', error);
+    }
+  };
+
+  useEffect(() => {
+    console.log('policyData updated:', policyData);
+  }, [policyData]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -42,12 +82,17 @@ export default function FileIntakePage() {
 
   const confirmTemplateSelection = () => {
     setShowSetupDialog(false);
-    // The selected template is already set in the state
   };
 
   const handleCancel = () => {
     router.push('/');  // Redirect to the home page
   };
+
+  const policyHolders = policyData.map(policy => policy.PolicyName);
+  const claimAdministrators = policyData.map(policy => policy.ClaimAdministrator1).filter(Boolean);
+
+  console.log('Rendering with policyHolders:', policyHolders);
+  console.log('Rendering with claimAdministrators:', claimAdministrators);
 
   return (
     <div className="min-h-screen bg-gray-100 p-8">
@@ -62,13 +107,32 @@ export default function FileIntakePage() {
         <div className="p-6">
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">Policyholder</label>
-            <input type="text" className="w-full p-2 border border-gray-300 rounded-md" />
+            <select 
+              className="w-full p-2 border border-gray-300 rounded-md"
+              value={selectedPolicyHolder}
+              onChange={(e) => setSelectedPolicyHolder(e.target.value)}
+            >
+              <option value="">Select...</option>
+              {policyHolders.map((policyName, index) => (
+                <option key={index} value={policyName}>
+                  {policyName}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">Claim Administrator</label>
-            <select className="w-full p-2 border border-gray-300 rounded-md">
-              <option>Select...</option>
-              {/* Add more options as needed */}
+            <select 
+              className="w-full p-2 border border-gray-300 rounded-md"
+              value={selectedClaimAdministrator}
+              onChange={(e) => setSelectedClaimAdministrator(e.target.value)}
+            >
+              <option value="">Select...</option>
+              {claimAdministrators.map((admin, index) => (
+                <option key={index} value={admin}>
+                  {admin}
+                </option>
+              ))}
             </select>
           </div>
           <div className="mb-4 flex items-center">

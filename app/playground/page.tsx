@@ -3,14 +3,25 @@
 import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { useRouter } from 'next/navigation';
+import { supabase } from '../supabaseClient';
 
 const predefinedColumns = [
-  'GroupNo', 'MemberNo', 'MemberUID', 'BenefitType', 'ServiceBegDate',
-  'ServiceEndDate', 'PaidDate', 'TransactionDate', 'Billed', 'Ineligible',
-  'PPODiscount', 'Deductible', 'Copay', 'Coinsurance', 'Paid', 'Savings',
-  'BillReceivedDate', 'ProcessDate', 'CheckNo', 'ClaimNo', 'ClaimLineNo',
-  'DiagnosisCode1', 'DiagnosisCode2', 'DiagnosisCode3', 'DiagnosisCode4',
-  'ProcedureCode'
+  "Benefit Type", 
+  "Claimant Name", 
+  "DateOfBirth", 
+  "Gender", 
+  "Relation", 
+  "GroupNo", 
+  "MemberNo", 
+  "ServiceBegDate",
+  "ServiceEndDate", 
+  "PaidDate", 
+  "Provider TIN", 
+  "Provider NPI", 
+  "DiagnosisCode", 
+  "ClaimNo",
+  "Billed", 
+  "Paid" 
 ];
 
 const colors = [
@@ -33,6 +44,29 @@ export default function PlaygroundPage() {
   const [activeSheet, setActiveSheet] = useState<string>('');
   const [fileName, setFileName] = useState('');
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check if the user is authenticated
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUserId(user?.id || null);
+    };
+    checkUser();
+  }, []);
+
+  useEffect(() => {
+    const checkSupabaseConnection = async () => {
+      const { data, error } = await supabase.from('your_table_name').select('count(*)', { count: 'exact' });
+      if (error) {
+        console.error('Error connecting to Supabase:', error);
+      } else {
+        console.log('Successfully connected to Supabase');
+      }
+    };
+
+    checkSupabaseConnection();
+  }, []);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
@@ -213,22 +247,56 @@ export default function PlaygroundPage() {
     // You can add your actual save logic here
   };
 
-  const handleSaveTemplate = () => {
-    if (fileName && Object.keys(mappings).length > 0) {
-      // Save the template to local storage
-      const savedTemplates = JSON.parse(localStorage.getItem('savedTemplates') || '{}');
-      savedTemplates[fileName] = mappings;
-      localStorage.setItem('savedTemplates', JSON.stringify(savedTemplates));
+  const handleSaveTemplate = async () => {
+    if (fileName && Object.keys(mappings).length > 0 && userId) {
+      try {
+        const { data, error } = await supabase
+          .from('templates')
+          .insert({
+            user_id: userId,
+            name: fileName,
+            mappings: mappings
+          });
 
-      setShowSaveSuccess(true);
-      setTimeout(() => {
-        setShowSaveSuccess(false);
-        setIsMappingComplete(false);
-        setIsModalOpen(false);  // Close the "Map Excel Columns" dialog
-        // No need to use router.push here as we're already on the playground page
-      }, 1000); // Hide the success message and close the dialogs after 1 second
+        if (error) throw error;
+
+        setShowSaveSuccess(true);
+        setTimeout(() => {
+          setShowSaveSuccess(false);
+          setIsMappingComplete(false);
+          setIsModalOpen(false);
+        }, 1000);
+      } catch (error) {
+        console.error('Error saving template:', error);
+        // You might want to show an error message to the user here
+      }
     }
   };
+
+  const loadSavedTemplates = async () => {
+    if (userId) {
+      try {
+        const { data, error } = await supabase
+          .from('templates')
+          .select('name, mappings')
+          .eq('user_id', userId);
+
+        if (error) throw error;
+
+        // You can use this data to populate a dropdown or list of saved templates
+        console.log('Saved templates:', data);
+      } catch (error) {
+        console.error('Error loading templates:', error);
+      }
+    }
+  };
+
+  // Call loadSavedTemplates when the component mounts or when userId changes
+  useEffect(() => {
+    if (userId) {
+      loadSavedTemplates();
+    }
+  }, [userId]);
 
   return (
     <div className="min-h-screen bg-gray-100 p-8">
