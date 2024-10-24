@@ -31,3 +31,28 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
+
+export async function POST(request: Request) {
+  const body = await request.json()
+  const { table, data } = body
+
+  if (!table || !data) {
+    return NextResponse.json({ error: 'Invalid parameters' }, { status: 400 })
+  }
+
+  try {
+    const { data: insertedData, error } = await supabase
+      .from(table)
+      .insert(data)
+      .select()
+    
+    if (error) {
+      throw error
+    }
+    
+    return NextResponse.json(insertedData)
+  } catch (error) {
+    console.error('Supabase query error:', error)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}

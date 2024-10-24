@@ -29,6 +29,35 @@ const colors = [
   '#F06292', '#AED581', '#7986CB', '#4DB6AC', '#FFD54F'
 ];
 
+interface TemplateMappings {
+  templateName: string;
+  sheets: {
+    sheetName: string;
+    mappings: {
+      [key: string]: string;
+    };
+  }[];
+}
+
+// Add this function at the top level of the file
+export function setGlobalSavedTemplate(templateName: string) {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem('globalSavedTemplate', templateName);
+  }
+}
+
+// Add this near the top of your file
+const logNetworkRequest = async (url: string, options: RequestInit) => {
+  console.log('Network request:', url, options);
+  try {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    console.log('Network response:', data);
+  } catch (error) {
+    console.error('Network error:', error);
+  }
+};
+
 export default function PlaygroundPage() {
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
@@ -44,29 +73,8 @@ export default function PlaygroundPage() {
   const [activeSheet, setActiveSheet] = useState<string>('');
   const [fileName, setFileName] = useState('');
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Check if the user is authenticated
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUserId(user?.id || null);
-    };
-    checkUser();
-  }, []);
-
-  useEffect(() => {
-    const checkSupabaseConnection = async () => {
-      const { data, error } = await supabase.from('your_table_name').select('count(*)', { count: 'exact' });
-      if (error) {
-        console.error('Error connecting to Supabase:', error);
-      } else {
-        console.log('Successfully connected to Supabase');
-      }
-    };
-
-    checkSupabaseConnection();
-  }, []);
+  const [templateName, setTemplateName] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
@@ -248,55 +256,84 @@ export default function PlaygroundPage() {
   };
 
   const handleSaveTemplate = async () => {
-    if (fileName && Object.keys(mappings).length > 0 && userId) {
-      try {
-        const { data, error } = await supabase
-          .from('templates')
-          .insert({
-            user_id: userId,
-            name: fileName,
-            mappings: mappings
-          });
+    console.log('Save Template button clicked');
+    console.log('Template Name:', templateName);
+    console.log('Mappings:', mappings);
 
-        if (error) throw error;
+    if (!templateName || templateName.trim() === '') {
+      console.log('Template name is missing or empty');
+      setFormError('Please enter a valid template name.');
+      return;
+    }
 
-        setShowSaveSuccess(true);
-        setTimeout(() => {
-          setShowSaveSuccess(false);
-          setIsMappingComplete(false);
-          setIsModalOpen(false);
-        }, 1000);
-      } catch (error) {
-        console.error('Error saving template:', error);
-        // You might want to show an error message to the user here
+    if (Object.keys(mappings).length === 0) {
+      console.log('Mappings are empty');
+      setFormError('Please complete the mappings before saving.');
+      return;
+    }
+
+    try {
+      console.log('Attempting to save template to Supabase');
+      console.log('Template data:', { template_name: templateName, mappings: mappings });
+
+      const { data, error } = await supabase
+        .from('claim_templates')
+        .insert({ 
+          template_name: templateName, 
+          mappings: mappings
+        })
+        .select();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        setFormError(`Failed to save template: ${error.message}`);
+        throw error;
+      }
+
+      console.log('Template saved successfully:', data);
+      setGlobalSavedTemplate(templateName);
+      setShowSaveSuccess(true);
+      setTimeout(() => {
+        setShowSaveSuccess(false);
+        setIsMappingComplete(false);
+        setIsModalOpen(false);
+      }, 2000);
+    } catch (error) {
+      console.error('Error saving template:', error);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+        setFormError(`Error saving template: ${error.message}`);
+      } else {
+        console.error('Unknown error:', error);
+        setFormError('An unknown error occurred while saving the template.');
       }
     }
   };
 
-  const loadSavedTemplates = async () => {
-    if (userId) {
-      try {
-        const { data, error } = await supabase
-          .from('templates')
-          .select('name, mappings')
-          .eq('user_id', userId);
+  const testSupabaseConnection = async () => {
+    try {
+      console.log('Testing Supabase connection...');
+      const { data, error } = await supabase
+        .from('claim_templates')
+        .select('count(*)')
+        .single();
 
-        if (error) throw error;
-
-        // You can use this data to populate a dropdown or list of saved templates
-        console.log('Saved templates:', data);
-      } catch (error) {
-        console.error('Error loading templates:', error);
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
       }
+
+      console.log('Supabase connection successful. Row count:', data?.count);
+    } catch (error) {
+      console.error('Supabase connection error:', error);
     }
   };
 
-  // Call loadSavedTemplates when the component mounts or when userId changes
+  // Make sure to call this function in useEffect
   useEffect(() => {
-    if (userId) {
-      loadSavedTemplates();
-    }
-  }, [userId]);
+    testSupabaseConnection();
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-100 p-8">
@@ -423,7 +460,7 @@ export default function PlaygroundPage() {
       )}
 
       {isMappingComplete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[80vh] overflow-y-auto">
             <h2 className="text-2xl font-bold mb-4 text-black">Mapping Successful</h2>
             <div className="mb-6 overflow-x-auto">
@@ -458,22 +495,25 @@ export default function PlaygroundPage() {
             <div className="flex items-center space-x-4 mt-6">
               <input
                 type="text"
-                value={fileName}
-                onChange={(e) => setFileName(e.target.value)}
+                value={templateName}
+                onChange={(e) => {
+                  console.log('Template name changed:', e.target.value);
+                  setTemplateName(e.target.value);
+                }}
                 placeholder="Enter template name"
                 className="flex-grow px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
               />
               <button
                 onClick={handleSaveTemplate}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                disabled={!fileName}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 cursor-pointer"
+                disabled={!templateName}
               >
                 Save Template
               </button>
               <button
                 onClick={() => {
                   setIsMappingComplete(false);
-                  setIsModalOpen(false);  // Close both dialogs
+                  setIsModalOpen(false);
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
               >
@@ -487,6 +527,9 @@ export default function PlaygroundPage() {
             )}
           </div>
         </div>
+      )}
+      {formError && (
+        <div className="text-red-500 mt-2">{formError}</div>
       )}
     </div>
   );
